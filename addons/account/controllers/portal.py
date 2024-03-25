@@ -58,6 +58,23 @@ class PortalAccount(CustomerPortal):
             'bills': {'label': _('Bills'), 'domain': [('move_type', 'in', ('in_invoice', 'in_refund', 'in_receipt'))]},
         }
 
+    def details_form_validate(self, data, partner_creation=False):
+        error, error_message = super(PortalAccount, self).details_form_validate(data)
+        # prevent VAT/name change if invoices exist
+        # Skip this test if we're creating a new partner as we won't ever block him from filling values.
+        if not partner_creation and not partner.can_edit_vat():
+            if 'vat' in data and (data['vat'] or False) != (partner.vat or False):
+                error['vat'] = 'error'
+                error_message.append(_('Changing VAT number is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
+            partner = request.env['res.users'].browse(request.uid).partner_id
+            if 'name' in data and (data['name'] or False) != (partner.name or False):
+                error['name'] = 'error'
+                error_message.append(_('Changing your name is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
+            if 'company_name' in data and (data['company_name'] or False) != (partner.company_name or False):
+                error['company_name'] = 'error'
+                error_message.append(_('Changing your company name is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
+        return error, error_message
+
     @http.route(['/my/invoices', '/my/invoices/page/<int:page>'], type='http', auth="user", website=True)
     def portal_my_invoices(self, page=1, date_begin=None, date_end=None, sortby=None, filterby=None, **kw):
         values = self._prepare_my_invoices_values(page, date_begin, date_end, sortby, filterby)
@@ -124,6 +141,10 @@ class PortalAccount(CustomerPortal):
         })
         return values
 
+    # ------------------------------------------------------------
+    # My Home
+    # ------------------------------------------------------------
+
     @http.route(['/my/invoices/<int:invoice_id>'], type='http', auth="public", website=True)
     def portal_my_invoice_detail(self, invoice_id, access_token=None, report_type=None, download=False, **kw):
         try:
@@ -149,27 +170,6 @@ class PortalAccount(CustomerPortal):
 
         values = self._invoice_get_page_view_values(invoice_sudo, access_token, **kw)
         return request.render("account.portal_invoice_page", values)
-
-    # ------------------------------------------------------------
-    # My Home
-    # ------------------------------------------------------------
-
-    def details_form_validate(self, data, partner_creation=False):
-        error, error_message = super(PortalAccount, self).details_form_validate(data)
-        # prevent VAT/name change if invoices exist
-        partner = request.env['res.users'].browse(request.uid).partner_id
-        # Skip this test if we're creating a new partner as we won't ever block him from filling values.
-        if not partner_creation and not partner.can_edit_vat():
-            if 'vat' in data and (data['vat'] or False) != (partner.vat or False):
-                error['vat'] = 'error'
-                error_message.append(_('Changing VAT number is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
-            if 'name' in data and (data['name'] or False) != (partner.name or False):
-                error['name'] = 'error'
-                error_message.append(_('Changing your name is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
-            if 'company_name' in data and (data['company_name'] or False) != (partner.company_name or False):
-                error['company_name'] = 'error'
-                error_message.append(_('Changing your company name is not allowed once invoices have been issued for your account. Please contact us directly for this operation.'))
-        return error, error_message
 
     def extra_details_form_validate(self, data, additional_required_fields, error, error_message):
         """ Ensure that all additional required fields have a value in the data """
